@@ -6,7 +6,7 @@
 int start = 0;
 struct t2fs_superbloco superbloco;
 unsigned char buffer[256];
-// this will store the cluster of the currentDir
+// this will store the cluster of the currentDir/save the list also
 int currentDir;
 
 #define	MAX_FILE_NAME_SIZE	55
@@ -35,7 +35,23 @@ int identify2 (char *name, int size){
 void init() {
     if(start==0){
         read_sector(0,&superbloco);
+        // Criacao diretorio raiz
         currentDir = superbloco.RootDirCluster;
+        // Verificar se ja tem informacoes escritas no root e escrever info do rootDir
+        struct t2fs_record rootData[4];
+        read_sector(superbloco.RootDirCluster*superbloco.SectorsPerCluster + superbloco.DataSectorStart,rootData);
+        int ln = sizeof(rootData)/sizeof(struct t2fs_record);
+        if(ln < 1){
+            int len = superbloco.SectorsPerCluster*4;
+            struct t2fs_record list[len];
+            struct t2fs_record rootDir;
+            rootDir.bytesFileSize=superbloco.SectorsPerCluster*256;
+            rootDir.firstCluster=superbloco.RootDirCluster;
+            strcpy(rootDir.name,"root");
+            rootDir.TypeVal=0x02;
+            list[0] = rootDir;
+            write_sector(superbloco.RootDirCluster*superbloco.SectorsPerCluster + superbloco.DataSectorStart,list);
+        }
         start=1;
     }
 }
@@ -99,21 +115,23 @@ int checkPath(char *filename){
     return 1;
 }
 
-int retrieveFreeFilesList(char list[], int sector){
+void writeToList(struct t2fs_record rec, int sector){
+    struct t2fs_record list[4];
+    struct t2fs_record listar[4];
     int i;
     for(i=0;i<superbloco.SectorsPerCluster;i++){
-        read_sector(sector + i + superbloco.DataSectorStart,buffer); // Deve haver uma lista em "buffer" contendo as entradas de diretorio
-        /**PARSE DO BUFFER => return PARSED_INFO(melhor de fazer/testar qd o dir raiz for propriamente inicializado)**/
-        list = PARSED_INFO;
+        read_sector(sector+i,list);
+        int ln = sizeof(list)/sizeof(struct t2fs_record); // PORQUE SEMPRE RETORNA 4??
+        if(ln < 4){
+            //pode escrever
+            list[ln] = rec;
+            write_sector(sector+i,list);
+            read_sector(sector+i,listar);
+            printf("%s, %d", listar[ln].name,listar[ln].firstCluster);
+            fflush(stdout);
+            return;
+        }
     }
-    if(list.length < superbloco.SectorsPerCluster*4){ //list.length é teorico, o certo é fazer sizeof e dividir pelo num de bytes (conferir no outro codigo)
-        return 1;//free
-    }
-    return 0;
-}
-
-void writeToList(struct t2fs_record rec, char *path){
-    //int ln = len(PARSED_INFO) // Possivel de fazer pegando o sizeof e dividindo pelo numero de bytes por parte do array (conferir no outro codigo)
 }
 
 void findPath(char *filepath, char filename[], char path[]){
@@ -128,7 +146,7 @@ void findPath(char *filepath, char filename[], char path[]){
     else strcpy(path,"root");
 }
 
-int sectorToWrite(char path[]){
+int sectorToWrite(char path[]){ // A SER TESTADO (ELSE)
 
     if(strcmp(path,"root")==0){
         return superbloco.RootDirCluster*superbloco.SectorsPerCluster + superbloco.DataSectorStart;
@@ -137,18 +155,30 @@ int sectorToWrite(char path[]){
         int len = strlen(path);
         char auxPath[len];
         char *dpath;
+        struct t2fs_record ret[superbloco.SectorsPerCluster];
+        int k,i;
         strcpy(auxPath,path);
         dpath = strtok(auxPath,"/");
         int offset = superbloco.RootDirCluster*superbloco.SectorsPerCluster;
-        while(dpath!=NULL){/** Essa busca é bem parecida com a busca q vai ser feita no "checkPath", só pra constar**/
-            read_sector(offset + superbloco.DataSectorStart,buffer); // Deve haver uma lista em "buffer" contendo as entradas de diretorio
-            /**PARSE DO BUFFER => return PARSED_INFO(melhor de fazer/testar qd o dir raiz for propriamente inicializado)**/
+        int newoffset = 0;
+        int troca=1;
+        while(dpath!=NULL && troca){/** Essa busca é bem parecida com a busca q vai ser feita no "checkPath", só pra constar**/
             dpath = strtok(NULL,"/");
-            if(dpath != NULL && strcmp(dpath, PARSED_INFO.name) == 0){ // existe diretorio esperado na lista (provavelmente vai precisar de um FOR aqui pra verificar toda lista)
-                offset = PARSED_INFO.firstCluster*superbloco.SectorsPerCluster;
+            newoffset=offset;
+            for(i=0;i<superbloco.SectorsPerCluster;i++){ //
+                read_sector(offset + superbloco.DataSectorStart+i,ret); // Deve haver uma lista em "buffer" contendo as entradas de diretorio
+                for(k=0;k<4;k++){ // ALTERAR O 4 POR SECTOR/CLUSTER / SIZE DE UM RECORD
+                    if(dpath != NULL && strcmp(dpath, ret[k].name) == 0){ // existe diretorio esperado na lista (provavelmente vai precisar de um FOR aqui pra verificar toda lista)
+                        offset = ret[k].firstCluster*superbloco.SectorsPerCluster;
+                    }
+                }
             }
+            if(newoffset == offset)
+                troca = 0;
         }
-        return offset + superbloco.DataSectorStart;
+        if(offset != superbloco.RootDirCluster*superbloco.SectorsPerCluster)
+            return offset + superbloco.DataSectorStart;
+        else return -1;
     }
 
 }
@@ -157,11 +187,7 @@ void addFileToList(struct t2fs_record rec, char *filepath, char filename[]){
     int len = strlen(filepath);
     char path[len];
     findPath(filepath, filename, path);
-    int sector = sectorToWrite(path); // COMEÇOU A PRECISAR ARRUMAR ALGUMAS COISAS DO INIT AQUI
-
-    char *list;
-    int free = retrieveFreeFilesList(list, sector);
-
+    int sector = sectorToWrite(path);
     if(free){
         writeToList(rec, sector);
     }
@@ -184,6 +210,7 @@ FILE2 create2 (char *filename){
     init();
     int cluster[1] = {0};
     int map[1] = {0};
+    int fileHandler;
 
     readFreeFAT(cluster,1);
     clusterMap(cluster, map);
@@ -198,8 +225,8 @@ FILE2 create2 (char *filename){
         strcpy(newFile.name, nome);
 
         addFileToList(newFile, filename, nome); // Adiciona as infos do arquivo ao seu diretorio
-        writeFATMapping(map); // Basicamente ler o valor do map e escrever o proximo valor nele na area da FAT => FAT[MAP[N]] = MAPPING[N+1]
-        return fileHandler // TBD
+        //writeFATMapping(map); // Basicamente ler o valor do map e escrever o proximo valor nele na area da FAT => FAT[MAPPING[N]] = MAPPING[N+1]
+        return fileHandler; // TBD
     }
     else return -1;
         /** - Atualizar estrutura de entrada de diretorio
