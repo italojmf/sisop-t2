@@ -64,8 +64,8 @@ void readFreeFAT(int c[], int clusters){
     int clustNum;
     while(currentFAT <= endFAT){
         clustNum = readDisk(currentFAT);
-        if(clustNum == 0){
-            c[x] = currentFAT; // currentFAT apota pra um cluster
+        if(clustNum > 0){
+            c[x] = currentFAT; // setor da fat onde tem espaco livre
             x++;
             if(x >= clusters){
                 return;
@@ -77,19 +77,29 @@ void readFreeFAT(int c[], int clusters){
 
 int readDisk(int fat){
     read_sector(fat,&buffer);
-
-    int sect = *((WORD *)(buffer));
-    return sect;
+    int len = sizeof buffer/sizeof(int);
+    int i, s=-1;
+    for(i=0;i < len;i++){
+        if(buffer[i] == 0)
+            s=i;
+            break;
+    }
+    return s;
 }
 
-// Return to MAP the free sector read from fat as sector number
-void clusterMap(int cluster[],int map[]){
+//
+void clusterMap(int setorFAT[],int map[]){
     int startDados = superbloco.DataSectorStart;
     int sector = superbloco.SectorsPerCluster;
-    int i;
-    for(i=0; i < sizeof cluster; i++){
-        map[i] = cluster[i]*sector + startDados;
+    int i,s;
+    read_sector(setorFAT[0],buffer);
+    for(i=0;i<64;i++){
+        if(buffer[i] == 0){
+            s=i;
+            break;
+        }
     }
+    map[0] = setorFAT[0]*64 + s*sector + startDados;
 }
 
 void readFileName(char * filename, char nome[]){
@@ -118,17 +128,23 @@ int checkPath(char *filename){
 void writeToList(struct t2fs_record rec, int sector){
     struct t2fs_record list[4];
     struct t2fs_record listar[4];
+    int ln=4;
     int i;
-    for(i=0;i<superbloco.SectorsPerCluster;i++){
+    for(i=0;i < superbloco.SectorsPerCluster;i++){
         read_sector(sector+i,list);
-        int ln = sizeof(list)/sizeof(struct t2fs_record); // PORQUE SEMPRE RETORNA 4??
+
+        if(strcmp(list[0].name,"") == 0)
+            ln = 0;
+        else if(strcmp(list[1].name,"") == 0)
+            ln = 1;
+        else if(strcmp(list[2].name,"") == 0)
+            ln = 2;
+        else if(strcmp(list[3].name,"") == 0)
+            ln = 3;
         if(ln < 4){
             //pode escrever
             list[ln] = rec;
             write_sector(sector+i,list);
-            read_sector(sector+i,listar);
-            printf("%s, %d", listar[ln].name,listar[ln].firstCluster);
-            fflush(stdout);
             return;
         }
     }
@@ -146,7 +162,7 @@ void findPath(char *filepath, char filename[], char path[]){
     else strcpy(path,"root");
 }
 
-int sectorToWrite(char path[]){ // A SER TESTADO (ELSE)
+int sectorToWrite(char path[]){
 
     if(strcmp(path,"root")==0){
         return superbloco.RootDirCluster*superbloco.SectorsPerCluster + superbloco.DataSectorStart;
@@ -193,6 +209,20 @@ void addFileToList(struct t2fs_record rec, char *filepath, char filename[]){
     }
 }
 
+void writeFATMapping(int setorFAT[]){
+    int endFAT = superbloco.DataSectorStart;
+    int currentFAT = superbloco.pFATSectorStart;
+    currentFAT += 2;
+    int i;
+    read_sector(setorFAT[0],buffer);
+    for(i=0;i<64;i++){
+        if(buffer[i] == 0){
+            buffer[i] = 0xFFFFFFFF;
+            write_sector(setorFAT[0],buffer);
+            break;
+        }
+    }
+}
 /*-----------------------------------------------------------------------------
 Função: Criar um novo arquivo.
 	O nome desse novo arquivo é aquele informado pelo parâmetro "filename".
@@ -208,12 +238,12 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna o handle d
 -----------------------------------------------------------------------------*/
 FILE2 create2 (char *filename){
     init();
-    int cluster[1] = {0};
-    int map[1] = {0};
+    int setorFAT[1] = {0}; // POSICAO DO SETOR DA FAT COM ESPACO LIVRE
+    int map[1] = {0}; // POSICAO NA AREA DE DADOS DO CLUSTER LIDO EM CLUSTER[]
     int fileHandler;
 
-    readFreeFAT(cluster,1);
-    clusterMap(cluster, map);
+    readFreeFAT(setorFAT,1);
+    clusterMap(setorFAT, map);
 
     if(checkPath(filename)){
         struct t2fs_record newFile;
@@ -225,7 +255,7 @@ FILE2 create2 (char *filename){
         strcpy(newFile.name, nome);
 
         addFileToList(newFile, filename, nome); // Adiciona as infos do arquivo ao seu diretorio
-        //writeFATMapping(map); // Basicamente ler o valor do map e escrever o proximo valor nele na area da FAT => FAT[MAPPING[N]] = MAPPING[N+1]
+        writeFATMapping(map); // Basicamente ler o valor do map e escrever o proximo valor nele na area da FAT => FAT[MAPPING[N]] = MAPPING[N+1]
         return fileHandler; // TBD
     }
     else return -1;
