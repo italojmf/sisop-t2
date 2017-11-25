@@ -462,14 +462,14 @@ int close2 (FILE2 handle){
     return -1;
 }
 
-int read2 (FILE2 handle, char *buffer, int size){
+int read2 (FILE2 handle, char *buffer2, int size){
     init();
     int cluster = handle;
     char data[256];
     OpenedFiles curr;
     int i,j,len, secs = size/256;
     char dt[size];
-    char helper[size];
+    strcpy(dt,"");
 
     for (i = 0; i < 10; ++i)
     {
@@ -484,22 +484,21 @@ int read2 (FILE2 handle, char *buffer, int size){
     if(secs > superbloco.SectorsPerCluster)
         secs = superbloco.SectorsPerCluster-1;
     for (j = 0; j <= secs; ++j)
-    {
-        strcpy(helper," ");
+    {   
         read_sector(handle*superbloco.SectorsPerCluster + superbloco.DataSectorStart + j, &data);
         len = strlen(data);
         if(len < size){
-            strcpy(helper,data);
-            strcat(dt,helper);
+            strcat(dt,data);
             size = size - len;
         }
         else {
             strncat(dt,data,size); 
-        } 
+        }
     }
-    strcpy(buffer,dt);
+    strcpy(buffer2,dt);
     open[i].currentPointer = strlen(dt) + 1;
-    return strlen(buffer);
+    // erro comeca em 34 e a partir de 34 retorna valor errado
+    return strlen(buffer2);
 }
 
 int write2 (FILE2 handle, char *buffer, int size){
