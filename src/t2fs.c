@@ -8,7 +8,7 @@ int start = 0;
 struct t2fs_superbloco superbloco;
 unsigned char buffer[256];
 // this will store the cluster of the currentDir/save the list also
-unsigned int currentDir;
+unsigned int currentDir; // numero do cluster, simplificado, por ex: 2,3,4,5..
 unsigned int fatherDir;
 
 #define	MAX_FILE_NAME_SIZE	55
@@ -304,6 +304,31 @@ void writeFATMapping(int setorFAT[], int map[]){
     }
 }
 
+void clearFat(int sector, int pos){
+    read_sector(sector,&buffer);
+    buffer[pos] = 0x00;
+    write_sector(sector,buffer);
+}
+
+void findFileTrace(int cluster){
+    int i; // > recuperar posicao
+    int j; // recuperar setor 
+    int curr = cluster;
+    do {
+        if(curr > 64){
+            i = curr%64;
+            j = curr/64;
+        }
+        else {
+            i=curr;
+            j=0;
+        }
+        read_sector(j+superbloco.pFATSectorStart,&buffer);
+        curr = buffer[i];
+        clearFat(j+1,i);
+    } while(curr != 0xFF);
+}
+
 FILE2 create2 (char *filename){
     init();
     unsigned int setorFAT[1] = {0}; // POSICAO DO SETOR DA FAT COM ESPACO LIVRE
@@ -345,9 +370,30 @@ FILE2 create2 (char *filename){
 }
 
 int delete2 (char *filename){
+    struct t2fs_record list[4];
+    int i,j,s = -1;
+    int cluster;
+    char len = strlen(filename);
+    char auxName[len+1];
+    static const struct t2fs_record deleted;
 
+    strcpy(auxName,filename);
 
-
+    for(i=0;i<4;i++){
+        read_sector(currentDir*superbloco.SectorsPerCluster + superbloco.DataSectorStart + i,list);
+        for(j=0;j<4;j++){
+            if(strcmp(list[i].name, auxName) == 0 && list[i].TypeVal == 0x01){
+                cluster = list[i].firstCluster;
+                list[i] = deleted;
+                s=i;
+                break;
+            }
+        }
+        if(s==i)
+            break;
+    }
+    write_sector(currentDir*superbloco.SectorsPerCluster + superbloco.DataSectorStart + s,list);
+    findFileTrace(cluster);
 }
 
 FILE2 open2 (char *filename){}
