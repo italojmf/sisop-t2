@@ -497,7 +497,6 @@ int read2 (FILE2 handle, char *buffer2, int size){
     }
     strcpy(buffer2,dt);
     open[i].currentPointer = strlen(dt) + 1;
-    // erro comeca em 34 e a partir de 34 retorna valor errado
     return strlen(buffer2);
 }
 
@@ -531,6 +530,7 @@ int write2 (FILE2 handle, char *buffer, int size){
     if(freeSec == superbloco.SectorsPerCluster && curr.currentPointer -1 + size > 256)
         return -1;
 
+    curr.file.bytesFileSize = 0;
     for (j = freeSec; j <= totalBytes; ++j)
     {
         read_sector(handle*superbloco.SectorsPerCluster + superbloco.DataSectorStart + j, &data);
@@ -552,15 +552,15 @@ int write2 (FILE2 handle, char *buffer, int size){
         }
 
         strncpy(help,&toWrite[written], freeB);
-        puts(help);
 
         strncpy(&dt[curr.currentPointer -1], help, freeB);
-        puts(dt);
 
         curr.currentPointer = curr.currentPointer + freeB + 1;
         written = freeB-1;
         write_sector(handle*superbloco.SectorsPerCluster + superbloco.DataSectorStart + j, dt);
+        curr.file.bytesFileSize += strlen(dt);
     }
+    open[i] = curr;
     return size;
 }
 
@@ -595,7 +595,36 @@ int truncate2 (FILE2 handle){
     return 0;
 }
 
-int seek2 (FILE2 handle, unsigned int offset){}
+int seek2 (FILE2 handle, unsigned int offset){
+    init();
+    int i;
+    char data[256];
+    OpenedFiles curr;
+    int spc = superbloco.SectorsPerCluster;
+    int start = superbloco.DataSectorStart;
+    int byteSec = 256;
+    for (i = 0; i < 10; ++i)
+    {
+        if(open[i].file.firstCluster == handle){
+            curr = open[i];
+            break;
+        }
+        if(i==9)
+            return -1;
+    }
+    
+    if(offset == -1){
+        curr.currentPointer = curr.file.bytesFileSize;
+        open[i] = curr;
+        return 0;
+    }
+    else if(offset < curr.file.bytesFileSize){
+        curr.currentPointer = offset;
+        open[i] = curr;
+        return 0;
+    }
+    else return -1;
+}
 
 int mkdir2 (char *pathname){
     init();
