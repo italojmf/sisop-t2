@@ -467,7 +467,10 @@ int read2 (FILE2 handle, char *buffer, int size){
     int cluster = handle;
     char data[256];
     OpenedFiles curr;
-    int i,len;
+    int i,len, secs = size/256;
+    char dt[size];
+    char helper[size];
+
     for (i = 0; i < 10; ++i)
     {
         if(open[i].file.firstCluster == cluster){
@@ -478,11 +481,23 @@ int read2 (FILE2 handle, char *buffer, int size){
             return -1;
         }
     }
-    read_sector(handle*superbloco.SectorsPerCluster + superbloco.DataSectorStart, &data);
-    char dt[size];
-    strncpy(dt,data,size);
+
+    for (i = 0; i <= secs; ++i)
+    {
+        strcpy(helper," ");
+        read_sector(handle*superbloco.SectorsPerCluster + superbloco.DataSectorStart + i, &data);
+        len = strlen(data);
+        if(len < size){
+            strcpy(helper,data);
+            strcat(dt,helper);
+            size = size - len;
+        }
+        else {
+            strncat(dt,data,size); 
+        } 
+    }
     strcpy(buffer,dt);
-    
+
     return strlen(buffer);
 }
 
@@ -582,3 +597,4 @@ int readdir2 (DIR2 handle, DIRENT2 *dentry){}
 
 int closedir2 (DIR2 handle){}
 
+    
