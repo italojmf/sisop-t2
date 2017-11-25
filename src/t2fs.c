@@ -564,7 +564,36 @@ int write2 (FILE2 handle, char *buffer, int size){
     return size;
 }
 
-int truncate2 (FILE2 handle){}
+int truncate2 (FILE2 handle){
+    init();
+    int i;
+    char data[256];
+    OpenedFiles curr;
+    int spc = superbloco.SectorsPerCluster;
+    int start = superbloco.DataSectorStart;
+    int byteSec = 256;
+    for (i = 0; i < 10; ++i)
+    {
+        if(open[i].file.firstCluster == handle){
+            curr = open[i];
+            break;
+        }
+        if(i==9)
+            return -1;
+    }
+
+    int sec = (curr.currentPointer)/byteSec;
+
+    read_sector(curr.file.firstCluster * spc + start + sec, &data);
+    int len = strlen(data);
+    char dt[len];
+    strcpy(dt,data);
+
+    dt[curr.currentPointer - 1] = '\0';
+    write_sector(curr.file.firstCluster * spc + start + sec, dt);
+
+    return 0;
+}
 
 int seek2 (FILE2 handle, unsigned int offset){}
 
