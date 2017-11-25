@@ -17,6 +17,14 @@ struct filePointer {
     int currentPointer;
 };
 
+typedef struct {
+    struct t2fs_record file;
+    int currentPointer;
+} OpenedFiles;
+
+OpenedFiles open[10];
+int opened = 0;
+
 /*-----------------------------------------------------------------------------
 Função: Usada para identificar os desenvolvedores do T2FS.
 	Essa função copia um string de identificação para o ponteiro indicado por "name".
@@ -329,6 +337,16 @@ void findFileTrace(int cluster){
     } while(curr != 0xFF);
 }
 
+int isFileOpen(struct t2fs_record new){
+    int i;
+    for(i = 0; i < 10; ++i)
+    {
+        if(new.firstCluster == open[i].file.firstCluster)
+            return 1;
+    }
+    return -1;
+}
+
 FILE2 create2 (char *filename){
     init();
     unsigned int setorFAT[1] = {0}; // POSICAO DO SETOR DA FAT COM ESPACO LIVRE
@@ -370,6 +388,7 @@ FILE2 create2 (char *filename){
 }
 
 int delete2 (char *filename){
+    init();
     struct t2fs_record list[4];
     int i,j,s = -1;
     int cluster;
@@ -392,17 +411,113 @@ int delete2 (char *filename){
         if(s==i)
             break;
     }
+    if(s!=i)
+        return -1;
     write_sector(currentDir*superbloco.SectorsPerCluster + superbloco.DataSectorStart + s,list);
     findFileTrace(cluster);
 }
 
-FILE2 open2 (char *filename){}
+FILE2 open2 (char *filename){
+    init();
+    int len = strlen(filename);
+    char auxName[len];
+    strcpy(auxName, filename);
+    OpenedFiles new;
+    struct t2fs_record list[4];
+    int i,j, s=-1;
 
-int close2 (FILE2 handle){}
+    for(i=0;i<4;i++){
+        read_sector(currentDir*superbloco.SectorsPerCluster + superbloco.DataSectorStart + i,list);
+        for(j=0;j<4;j++){
+            if(strcmp(list[j].name, auxName) == 0 && list[j].TypeVal == 0x01){
+                new.file = list[j];
+                new.currentPointer = 0;
+                s=i;                
+                break;
+            }
+        }
+        if(s==i)
+            break;
+    }
+    if(s!=i)
+        return -1;
+    if(isFileOpen(new.file) >0)
+        return -1;
+    open[opened] = new;
+    opened++;
+    return new.file.firstCluster;
+}
 
-int read2 (FILE2 handle, char *buffer, int size){}
+int close2 (FILE2 handle){
+    init();
+    static const OpenedFiles holder;
+    int i;
+    for ( i = 0; i < 10; ++i)
+    {
+        if(open[i].file.firstCluster == handle){
+            open[i] = holder;
+            return 0;
+        }
+    }
+    return -1;
+}
 
-int write2 (FILE2 handle, char *buffer, int size){}
+int read2 (FILE2 handle, char *buffer, int size){
+    init();
+    int cluster = handle;
+    char data[256];
+    OpenedFiles curr;
+    int i,len;
+    for (i = 0; i < 10; ++i)
+    {
+        if(open[i].file.firstCluster == cluster){
+            curr = open[i];
+            break;
+        }
+        if(i==9){
+            return -1;
+        }
+    }
+    read_sector(handle*superbloco.SectorsPerCluster + superbloco.DataSectorStart, &data);
+    char dt[size];
+    strncpy(dt,data,size);
+    strcpy(buffer,dt);
+    
+    return strlen(buffer);
+}
+
+int write2 (FILE2 handle, char *buffer, int size){
+    init();
+    int cluster = handle;
+    int bLen = strlen(buffer);
+    int byteSec = 256;
+    int sects = size/byteSec; // qtde de setores que precisa usar pra escrever 
+    OpenedFiles curr;
+    int i;
+    char data[256];
+    int len;
+
+    for (i = 0; i < 19; ++i)
+    {
+        if(open[i].file.firstCluster == handle){
+            curr = open[i];
+            break;
+        }
+
+    }
+    read_sector(handle*superbloco.SectorsPerCluster + superbloco.DataSectorStart, &data);
+    len = strlen(data);
+    char dt[len];
+    strcpy(dt,data);
+/*    if(len == 256)
+        //precisa ler proximo setor
+    else if(len + size > 256) // se isso acontecer e estivar no ultimo setor -> erro
+        //insere uma parte no setor atual e outra no proximo
+    else if(len + size < 256)
+        //insere no setor atual a info*/
+
+    exit(0);
+}
 
 int truncate2 (FILE2 handle){}
 
