@@ -467,7 +467,7 @@ int read2 (FILE2 handle, char *buffer, int size){
     int cluster = handle;
     char data[256];
     OpenedFiles curr;
-    int i,len, secs = size/256;
+    int i,j,len, secs = size/256;
     char dt[size];
     char helper[size];
 
@@ -481,11 +481,12 @@ int read2 (FILE2 handle, char *buffer, int size){
             return -1;
         }
     }
-
-    for (i = 0; i <= secs; ++i)
+    if(secs > superbloco.SectorsPerCluster)
+        secs = superbloco.SectorsPerCluster-1;
+    for (j = 0; j <= secs; ++j)
     {
         strcpy(helper," ");
-        read_sector(handle*superbloco.SectorsPerCluster + superbloco.DataSectorStart + i, &data);
+        read_sector(handle*superbloco.SectorsPerCluster + superbloco.DataSectorStart + j, &data);
         len = strlen(data);
         if(len < size){
             strcpy(helper,data);
@@ -497,41 +498,71 @@ int read2 (FILE2 handle, char *buffer, int size){
         } 
     }
     strcpy(buffer,dt);
-
+    open[i].currentPointer = strlen(dt) + 1;
     return strlen(buffer);
 }
 
 int write2 (FILE2 handle, char *buffer, int size){
     init();
     int cluster = handle;
-    int bLen = strlen(buffer);
     int byteSec = 256;
-    int sects = size/byteSec; // qtde de setores que precisa usar pra escrever 
     OpenedFiles curr;
     int i;
     char data[256];
     int len;
+    int bLen = strlen(buffer);
+    char toWrite[bLen];
 
-    for (i = 0; i < 19; ++i)
+    strcpy(toWrite,buffer);
+    for (i = 0; i < 10; ++i)
     {
         if(open[i].file.firstCluster == handle){
             curr = open[i];
             break;
         }
-
+        if(i==9)
+            return -1;
     }
-    read_sector(handle*superbloco.SectorsPerCluster + superbloco.DataSectorStart, &data);
-    len = strlen(data);
-    char dt[len];
-    strcpy(dt,data);
-/*    if(len == 256)
-        //precisa ler proximo setor
-    else if(len + size > 256) // se isso acontecer e estivar no ultimo setor -> erro
-        //insere uma parte no setor atual e outra no proximo
-    else if(len + size < 256)
-        //insere no setor atual a info*/
 
-    exit(0);
+    int totalBytes = (curr.currentPointer -1 + size)/byteSec;
+    int freeSec = (curr.currentPointer -1)/256; 
+    
+    int j,written = 0;
+
+    if(freeSec == superbloco.SectorsPerCluster && curr.currentPointer -1 + size > 256)
+        return -1;
+
+    for (j = freeSec; j <= totalBytes; ++j)
+    {
+        read_sector(handle*superbloco.SectorsPerCluster + superbloco.DataSectorStart + j, &data);
+        len = strlen(data);
+        char dt[len+size];
+        char help[len+size];
+        strcpy(dt,data);
+
+        int haveB = curr.currentPointer -1 % byteSec;
+        int freeB = byteSec - haveB;
+
+        if(bLen < freeB){
+            if(size < bLen){
+                freeB = size;
+            }
+            else {
+                freeB = bLen;
+            }
+        }
+
+        strncpy(help,&toWrite[written], freeB);
+        puts(help);
+
+        strncpy(&dt[curr.currentPointer -1], help, freeB);
+        puts(dt);
+
+        curr.currentPointer = curr.currentPointer + freeB + 1;
+        written = freeB-1;
+        write_sector(handle*superbloco.SectorsPerCluster + superbloco.DataSectorStart + j, dt);
+    }
+    return size;
 }
 
 int truncate2 (FILE2 handle){}
