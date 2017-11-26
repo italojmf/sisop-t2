@@ -793,7 +793,6 @@ int chdir2 (char *pathname){
 
     if(checkPath(path) >= 0){
         int sec = sectorToWrite(path);
-        printf("%d sec \n", sec);
         int i,j,s = -1;
         struct t2fs_record list[4];
         struct t2fs_record dir;
@@ -824,7 +823,37 @@ int chdir2 (char *pathname){
     else return -1;
 }
 
-int getcwd2 (char *pathname, int size){}
+int getcwd2 (char *pathname, int size){
+    init();
+    struct t2fs_record list[4];
+    struct t2fs_record curr;
+
+    if(currentDir == superbloco.RootDirCluster){
+        strcpy(pathname,"root");
+        return 0;
+    }
+    int i,j,s=-1;
+    for (i = 0; i < 4; ++i)
+    {   
+        read_sector(fatherDir*superbloco.SectorsPerCluster + superbloco.DataSectorStart + i, list);
+        for (j = 0; j < 4; ++j)
+        {   
+            if(list[j].firstCluster == currentDir && list[j].TypeVal == 0x02){
+                curr=list[j];
+                s=i;
+                break;
+            }
+        }
+        if(s==i)
+            break;
+    }
+
+    if(strlen(curr.name) > size){
+        return -1;
+    }
+    strcpy(pathname,curr.name);
+    return 0;
+}
 
 DIR2 opendir2 (char *pathname){}
 

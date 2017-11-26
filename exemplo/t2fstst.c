@@ -698,9 +698,32 @@ void cmdChDir(void) {
 }
 
 void cmdGetCwd(void) {
+    int size;
+    // get first parameter => number of bytes
+    char *token = strtok(NULL," \t");
+    if (token==NULL) {
+        printf ("Missing parameter\n");
+        return;
+    }
+    if (sscanf(token, "%d", &size)==0) {
+        printf ("Invalid parameter\n");
+        return;
+    }
 
+    // Alloc buffer for reading file
+    char *buffer = malloc(size);
+    if (buffer==NULL) {
+        printf ("Memory full\n");
+        return;
+    }
+
+    // get file bytes
+    int err = getcwd2(buffer, size);
+    if (err<0) {
+        printf ("Error: %d\n", err);
+        return;
+    }
+    printf ("\nCurrent dir: %s\n", buffer);
+
+    free(buffer);
 }
-
-
-
-
