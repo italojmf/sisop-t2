@@ -347,6 +347,53 @@ int isFileOpen(struct t2fs_record new){
     return -1;
 }
 
+int isDirEmpty(int sector){
+    int i,j;
+    struct t2fs_record del[4];
+    for (i = 0; i < superbloco.SectorsPerCluster; ++i)
+    {
+        read_sector(sector*superbloco.SectorsPerCluster + superbloco.DataSectorStart + i,del);
+        for (j = 0; j < 4; ++j)
+        {   
+            char dirName[55];
+            strcpy(dirName,del[j].name);
+            if(strcmp(dirName,".") != 0 && strcmp(dirName,"..") != 0 && strcmp(dirName,"") != 0){
+                return -1;
+            }
+        }
+    }
+    return 1;
+}
+
+int removeFromFather(int cluster, char nome[]){
+    static const struct t2fs_record holder;
+    struct t2fs_record del[4];
+    int i,j,flag=0;
+
+    for (i = 0; i < 4; ++i)
+    {   
+        read_sector(cluster*superbloco.SectorsPerCluster + superbloco.DataSectorStart + i, del);
+        for (j = 0; j < 4; ++j)
+        {
+            if(strcmp(del[j].name,nome) == 0){
+                del[j] = holder;
+                flag =1;
+                break;
+            }
+        }
+        if(flag)
+            break;
+    }
+    write_sector(cluster*superbloco.SectorsPerCluster + superbloco.DataSectorStart + i, del);
+}
+
+int getFather(int cluster){
+    struct t2fs_record list[4];
+
+    read_sector(cluster*superbloco.SectorsPerCluster + superbloco.DataSectorStart,list);
+    return list[1].firstCluster;    
+}
+
 FILE2 create2 (char *filename){
     init();
     unsigned int setorFAT[1] = {0}; // POSICAO DO SETOR DA FAT COM ESPACO LIVRE
@@ -401,9 +448,9 @@ int delete2 (char *filename){
     for(i=0;i<4;i++){
         read_sector(currentDir*superbloco.SectorsPerCluster + superbloco.DataSectorStart + i,list);
         for(j=0;j<4;j++){
-            if(strcmp(list[i].name, auxName) == 0 && list[i].TypeVal == 0x01){
-                cluster = list[i].firstCluster;
-                list[i] = deleted;
+            if(strcmp(list[j].name, auxName) == 0 && list[j].TypeVal == 0x01){
+                cluster = list[j].firstCluster;
+                list[j] = deleted;
                 s=i;
                 break;
             }
@@ -642,7 +689,7 @@ int mkdir2 (char *pathname){
     if(checkPath(path) >= 0){
         int spc = superbloco.SectorsPerCluster;
         int start = superbloco.DataSectorStart;
-        struct t2fs_record list[2];
+        struct t2fs_record list[4];
         struct t2fs_record newDir;
         newDir.bytesFileSize=0;
         newDir.firstCluster= (map[0] - start)/spc;
@@ -661,8 +708,13 @@ int mkdir2 (char *pathname){
         strcpy(father.name,"..");
         father.TypeVal=0x02;
 
+        static const struct t2fs_record holder;
+
         list[0] = current;
         list[1] = father;
+        list[2] = holder;
+        list[3] = holder;
+
         if(writeToList(newDir, sectorToWrite(path)) != -1){
             write_sector(newDir.firstCluster*spc + start,list);
             writeFATMapping(setorFAT,map); // Basicamente ler o valor do map e escrever o proximo valor nele na area da FAT => FAT[MAPPING[N]] = MAPPING[N+1]
@@ -673,7 +725,56 @@ int mkdir2 (char *pathname){
     return -1;
 }
 
-int rmdir2 (char *pathname){}
+int rmdir2 (char *pathname){
+    init();
+    char nome[MAX_FILE_NAME_SIZE], path[256];
+
+    readFileName(pathname,nome);
+    findPath(pathname, nome, path);
+
+    if(checkPath(path) >= 0){
+        int sec = sectorToWrite(pathname);
+
+        int i,j,flag = 0;
+        struct t2fs_record del[4];
+        struct t2fs_record toDel;
+        static const struct t2fs_record holder;
+
+        for (i = 0; i < 4; ++i)
+        {
+            read_sector(sec+i,del);
+            for (j = 0; j < 4; ++j)
+            {   
+                if(strcmp(del[j].name, nome) == 0){
+                    toDel = del[j];
+                    flag = 1;
+                    break;
+                }
+            }
+            if(flag)
+                break;
+        }
+
+        if(flag && isDirEmpty(toDel.firstCluster) < 0)
+            return -1;
+        else {
+            int fatSec = toDel.firstCluster/64 + superbloco.pFATSectorStart;
+            int fatherCluster = getFather(toDel.firstCluster);
+
+            clearFat(fatSec, toDel.firstCluster);
+            
+            removeFromFather(fatherCluster, nome);
+
+            for (i = 0; i < 4; ++i)
+            {
+                del[i] = holder;
+            }
+            write_sector(toDel.firstCluster*superbloco.SectorsPerCluster + superbloco.DataSectorStart, del); // limpar o diretoria
+            return 0;
+        }
+    }
+    else return -1;
+}
 
 int chdir2 (char *pathname){}
 
