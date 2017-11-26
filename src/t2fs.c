@@ -22,8 +22,17 @@ typedef struct {
     int currentPointer;
 } OpenedFiles;
 
+
+typedef struct {
+    int cluster;
+    int currentPointer;
+} OpenedDirs;
+
+
 OpenedFiles open[10];
+OpenedDirs opendir[10];
 int opened = 0;
+int openeddir = 0;
 
 /*-----------------------------------------------------------------------------
 Função: Usada para identificar os desenvolvedores do T2FS.
@@ -855,10 +864,136 @@ int getcwd2 (char *pathname, int size){
     return 0;
 }
 
-DIR2 opendir2 (char *pathname){}
-
-int readdir2 (DIR2 handle, DIRENT2 *dentry){}
-
-int closedir2 (DIR2 handle){}
-
+DIR2 opendir2 (char *pathname){
+    init();
+    int len = strlen(pathname);
+    char path[len];
     
+    char nome[MAX_FILE_NAME_SIZE];
+    readFileName(pathname,nome);
+    findPath(pathname, nome, path);
+
+    if(checkPath(path) >= 0){
+        int sec = sectorToWrite(path);
+        int i,j,s=-1;
+        struct t2fs_record list[4];
+        struct t2fs_record dir;
+
+        for (i = 0; i < 4; ++i)
+        {
+            read_sector(sec + i, list);
+            for (j = 0; j < 4; ++j)
+            {
+                if(strcmp(list[j].name,nome) ==0 && list[j].TypeVal == 0x02){
+                    dir = list[j];
+                    s=i;
+                    break;
+                }
+            }
+            if(s==i)
+                break;
+        }
+        if(s!=i)
+            return -1;
+
+        OpenedDirs new;
+        new.cluster = dir.firstCluster;
+        new.currentPointer = 0;
+
+        opendir[openeddir] = new;
+        openeddir++;
+        return dir.firstCluster;
+    }
+    else return -1;
+}
+
+int readdir2 (DIR2 handle, DIRENT2 *dentry){
+    init();
+    int i,j,s=-1;
+    int point;
+
+    for (i = 0; i < 10; ++i)
+    {
+        if(opendir[i].cluster == handle){
+            point = opendir[i].currentPointer;
+            break;
+        }
+    }
+
+    if(i>9){
+        return -5;
+    }
+
+    struct t2fs_record list[4];
+    struct t2fs_record dir;
+
+    int sec = point/4;
+    read_sector(handle*superbloco.SectorsPerCluster + superbloco.DataSectorStart + sec, list);
+    dir = list[point%4];
+    
+    if(dir.firstCluster == 0){
+        return -1;
+    }
+
+    strcpy(dentry->name, dir.name);
+    dentry->fileSize = dir.bytesFileSize;
+    dentry->fileType = dir.TypeVal;
+
+    point++;
+    opendir[i].currentPointer = point;
+
+    return 0;
+}
+
+int closedir2 (DIR2 handle){
+    init();
+    int i;
+    
+    static const OpenedDirs holder;
+
+    for (i = 0; i < 10; ++i)
+    {
+        if(opendir[i].cluster == handle){
+            opendir[i] = holder;
+            break;
+        }
+    }
+    
+    if(i > 9)
+        return -1;
+
+    return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// eeee 1k linhas    

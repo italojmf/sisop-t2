@@ -30,6 +30,10 @@ void cmdTrunc(void);
 void cmdChDir(void);
 void cmdGetCwd(void);
 
+void cmdOpenDir(void);
+void cmdCloseDir(void);
+void cmdReadDir(void);
+
 void cmdCp(void);
 void cmdFscp(void);
 
@@ -101,7 +105,9 @@ struct	{
 	{ "cd",		cmdChDir,	helpChDir 	},
 	{ "getcwd",	cmdGetCwd,	helpGetCwd 	},
 	{ "cwd",	cmdGetCwd,	helpGetCwd 	},
-
+    { "opendir",cmdOpenDir, "opendir"   },
+    { "closedr",cmdCloseDir,"closedir"  },
+    { "readdir",cmdReadDir, "readdir"   },
 	{ "open",	cmdOpen,	helpOpen 	},
 	{ "read",	cmdRead,	helpRead	},
 	{ "rd",		cmdRead,	helpRead	},
@@ -726,4 +732,70 @@ void cmdGetCwd(void) {
     printf ("\nCurrent dir: %s\n", buffer);
 
     free(buffer);
+}
+
+void cmdOpenDir(void){
+    FILE2 hFile;
+
+    char *token = strtok(NULL," \t");
+    if (token==NULL) {
+        printf ("Missing parameter\n");
+        return;
+    }
+
+    hFile = opendir2 (token);
+    if (hFile<0) {
+        printf ("Error: %d\n", hFile);
+        return;
+    }
+
+    printf ("File opened with handle %d\n", hFile);
+}
+
+void cmdCloseDir(void){
+    FILE2 handle;
+
+    char *token = strtok(NULL," \t");
+    if (token==NULL) {
+        printf ("Missing parameter\n");
+        return;
+    }
+
+    if (sscanf(token, "%d", &handle)==0) {
+        printf ("Invalid parameter\n");
+        return;
+    }
+
+    int err = closedir2(handle);
+    if (err<0) {
+        printf ("Error: %d\n", err);
+        return;
+    }
+
+    printf ("Closed file with handle %d\n", handle);
+}
+
+void cmdReadDir(void){
+    DIRENT2 lido;
+    FILE2 handle;
+
+    char *token = strtok(NULL," \t");
+    if (token==NULL) {
+        printf ("Missing parameter\n");
+        return;
+    }
+
+    if (sscanf(token, "%d", &handle)==0) {
+        printf ("Invalid parameter\n");
+        return;
+    }
+
+    int err = readdir2(handle, &lido);
+    if (err<0) {
+        printf ("Error: %d\n", err);
+        return;
+    }
+
+    printf("\nArquivo lido:\nNome: %s\nTipo:%d\nTamanho:%d\n", lido.name,lido.fileType,lido.fileSize);
+
 }
