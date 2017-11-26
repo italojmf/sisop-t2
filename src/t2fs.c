@@ -48,7 +48,11 @@ Saída:	Se a operação foi realizada com sucesso, a função retorna "0" (zero)
 	Em caso de erro, será retornado um valor diferente de zero.
 -----------------------------------------------------------------------------*/
 int identify2 (char *name, int size){
-
+    char nomes[] = "Gustavo P. Rosa - 206615\nItalo J. M. Franco - 242282\nVitoria M. Rosa - 242252\0";
+    if(size < strlen(nomes))
+        return -1;
+    else strcpy(name,nomes);
+    return 0;
 }
 
 void init() {
