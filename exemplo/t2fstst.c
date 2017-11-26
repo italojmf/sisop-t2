@@ -680,7 +680,21 @@ void cmdSeek(void) {
 }
 
 void cmdChDir(void) {
+    // get first parameter => pathname
+    char *token = strtok(NULL," \t");
+    if (token==NULL) {
+        printf ("Missing parameter\n");
+        return;
+    }
 
+    //chDir
+    int err = chdir2(token);
+    if (err<0){
+        printf ("Error: %d\n", err);
+        return;
+    }
+
+    printf("\nDirectory changed to: %s\n",token);
 }
 
 void cmdGetCwd(void) {

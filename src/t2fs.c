@@ -776,7 +776,53 @@ int rmdir2 (char *pathname){
     else return -1;
 }
 
-int chdir2 (char *pathname){}
+int chdir2 (char *pathname){
+    init();
+    int len = strlen(pathname);
+    char path[len];
+    
+    char nome[MAX_FILE_NAME_SIZE];
+    readFileName(pathname,nome);
+    findPath(pathname, nome, path);
+
+    if(strcmp(pathname,"/") ==0){
+        currentDir = superbloco.RootDirCluster;
+        fatherDir = superbloco.RootDirCluster;
+        return 0;
+    }
+
+    if(checkPath(path) >= 0){
+        int sec = sectorToWrite(path);
+        printf("%d sec \n", sec);
+        int i,j,s = -1;
+        struct t2fs_record list[4];
+        struct t2fs_record dir;
+
+        for (i = 0; i < 4; ++i)
+        {
+            read_sector(sec+i,list);
+            for (j = 0; j < 4; ++j)
+            {       
+                if(strcmp(list[j].name, nome) == 0 && list[j].TypeVal == 0x02){
+                    dir = list[j];
+                    s=i;
+                    break;
+                }
+            }
+            if(s==i)
+                break;
+        }
+
+        if(s!=i){
+            return -1;
+        }
+
+        currentDir = dir.firstCluster;
+        fatherDir = getFather(dir.firstCluster);
+        return 0;
+    }
+    else return -1;
+}
 
 int getcwd2 (char *pathname, int size){}
 
