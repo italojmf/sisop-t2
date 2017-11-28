@@ -132,33 +132,15 @@ void clusterMap(int setorFAT[],int map[]){
 }
 
 void readFileName(char * filename, char nome[]){
-
     char len = strlen(filename);
     char auxName[len+1];
     char *aux;
     strcpy(auxName,filename);
-    if(auxName[1] == '.' && auxName[0] == '.'){
-        aux = strtok(auxName, "..");
-        aux = strtok(aux,"/");
+    aux = strtok(auxName,"/");
+    while(aux!=NULL && strcmp(aux,"")!=0 && strcmp(aux," ")!=0){
+        strcpy(nome,aux);
+        aux = strtok(NULL, "/");
     }
-    else if(auxName[0] == '.'){
-        aux = strtok(auxName, ".");
-        aux = strtok(aux,"/");
-    }
-    else { aux = strtok(auxName,"/"); }
-
-    while(aux!=NULL && strcmp(aux," ")!=0){
-        strcpy(auxName,aux);
-        aux = strtok(NULL,"/");
-        if(aux != NULL){
-            strcpy(auxName,aux);
-        }
-        else{
-            strcpy(nome,auxName);
-            break;
-        }
-    }
-    strcpy(nome,auxName);
 }
 
 int checkPath(char path[]){
@@ -274,9 +256,12 @@ int sectorToWrite(char path[]){
         offset = currentDir*superbloco.SectorsPerCluster;
         dpath = strtok(dpath, "/");
     }
-    else return offset = currentDir*superbloco.SectorsPerCluster + superbloco.DataSectorStart;
+    else{
+            offset = currentDir*superbloco.SectorsPerCluster;
+            dpath = strtok(auxPath, "/");
+        }
 
-    while(dpath != NULL && strcmp(dpath," ")!=0 && troca){
+    while(dpath != NULL && strcmp(dpath," ") !=0 && troca){
         newoffset=offset;
         for(i=0;i<superbloco.SectorsPerCluster;i++){ //
             read_sector(offset + superbloco.DataSectorStart + i,ret); // Deve haver uma lista em "buffer" contendo as entradas de diretorio
@@ -303,10 +288,28 @@ int addFileToList(struct t2fs_record rec, char *filepath, char filename[]){
     findPath(filepath, filename, path);
     int sector = -1;
     sector = sectorToWrite(path);
-    if(sector != -1){
+
+    if(sector != -1 && uniqueName(sector,0x01,rec.name) > 0){
         return writeToList(rec, sector);
     }
     else return -1;
+}
+
+int uniqueName(int sector, unsigned int type, char name[]){
+    int i,j,s = -1;
+    struct t2fs_record list[4];
+
+    for (i = 0; i < 4; ++i)
+    {   
+        read_sector(sector + i, list);
+        for (j = 0; j < 4; ++j)
+        {
+            if(strcmp(list[j].name,name) == 0 && list[j].TypeVal == type){
+                return -1;          
+            }
+        }
+    }
+    return 1;
 }
 
 void writeFATMapping(int setorFAT[], int map[]){
@@ -329,6 +332,13 @@ void clearFat(int sector, int pos){
     read_sector(sector,&buffer);
     buffer[pos] = 0x00;
     write_sector(sector,buffer);
+}
+
+int getNextCluster(int fatPos){
+    int fatSet = fatPos/64;
+    int fatIn = fatPos%64;
+    read_sector(superbloco.pFATSectorStart + fatSet,buffer);
+    return buffer[fatIn];
 }
 
 void findFileTrace(int cluster){
@@ -449,63 +459,78 @@ FILE2 create2 (char *filename){
 
 int delete2 (char *filename){
     init();
-    struct t2fs_record list[4];
-    int i,j,s = -1;
-    int cluster;
-    char len = strlen(filename);
-    char auxName[len+1];
-    static const struct t2fs_record deleted;
+    char nome[MAX_FILE_NAME_SIZE], path[256];
 
-    strcpy(auxName,filename);
+    readFileName(filename,nome);
+    findPath(filename, nome, path);
 
-    for(i=0;i<4;i++){
-        read_sector(currentDir*superbloco.SectorsPerCluster + superbloco.DataSectorStart + i,list);
-        for(j=0;j<4;j++){
-            if(strcmp(list[j].name, auxName) == 0 && list[j].TypeVal == 0x01){
-                cluster = list[j].firstCluster;
-                list[j] = deleted;
-                s=i;
-                break;
+    if(checkPath(path) >= 0){
+        int sec = sectorToWrite(filename);
+        struct t2fs_record list[4];
+        int i,j,s = -1;
+        int cluster;
+        char len = strlen(filename);
+        char auxName[len+1];
+        static const struct t2fs_record deleted;
+
+        strcpy(auxName,filename);
+
+        for(i=0;i<4;i++){
+            read_sector(sec + i,list);
+            for(j=0;j<4;j++){
+                if(strcmp(list[j].name, nome) == 0 && list[j].TypeVal == 0x01){
+                    cluster = list[j].firstCluster;
+                    list[j] = deleted;
+                    s=i;
+                    break;
+                }
             }
+            if(s==i)
+                break;
         }
-        if(s==i)
-            break;
-    }
-    if(s!=i)
-        return -1;
-    write_sector(currentDir*superbloco.SectorsPerCluster + superbloco.DataSectorStart + s,list);
-    findFileTrace(cluster);
+        if(s!=i)
+            return -1;
+
+        write_sector(sec + s,list);
+        findFileTrace(cluster);
+        return 0;
+    } else return -1;
 }
 
 FILE2 open2 (char *filename){
     init();
-    int len = strlen(filename);
-    char auxName[len];
-    strcpy(auxName, filename);
-    OpenedFiles new;
-    struct t2fs_record list[4];
-    int i,j, s=-1;
+    char nome[MAX_FILE_NAME_SIZE], path[256];
 
-    for(i=0;i<4;i++){
-        read_sector(currentDir*superbloco.SectorsPerCluster + superbloco.DataSectorStart + i,list);
-        for(j=0;j<4;j++){
-            if(strcmp(list[j].name, auxName) == 0 && list[j].TypeVal == 0x01){
-                new.file = list[j];
-                new.currentPointer = 0;
-                s=i;                
-                break;
+    readFileName(filename,nome);
+    findPath(filename, nome, path);
+
+    if(checkPath(path) >= 0){
+        int sec = sectorToWrite(filename);
+        OpenedFiles new;
+        struct t2fs_record list[4];
+        int i,j, s=-1;
+
+        for(i=0;i<4;i++){
+            read_sector(sec + i,list);
+            for(j=0;j<4;j++){
+                if(strcmp(list[j].name, nome) == 0 && list[j].TypeVal == 0x01){
+                    new.file = list[j];
+                    new.currentPointer = 0;
+                    s=i;                
+                    break;
+                }
             }
+            if(s==i)
+                break;
         }
-        if(s==i)
-            break;
+        if(s!=i)
+            return -1;
+        if(isFileOpen(new.file) >0)
+            return -1;
+        open[opened] = new;
+        opened++;
+        return new.file.firstCluster;
     }
-    if(s!=i)
-        return -1;
-    if(isFileOpen(new.file) >0)
-        return -1;
-    open[opened] = new;
-    opened++;
-    return new.file.firstCluster;
 }
 
 int close2 (FILE2 handle){
@@ -727,8 +752,8 @@ int mkdir2 (char *pathname){
         list[1] = father;
         list[2] = holder;
         list[3] = holder;
-
-        if(writeToList(newDir, sectorToWrite(path)) != -1){
+        int sec = sectorToWrite(path);
+        if(uniqueName(sec,0x02,newDir.name) > 0 && writeToList(newDir, sec) != -1){
             write_sector(newDir.firstCluster*spc + start,list);
             writeFATMapping(setorFAT,map); // Basicamente ler o valor do map e escrever o proximo valor nele na area da FAT => FAT[MAPPING[N]] = MAPPING[N+1]
             return 0;
@@ -969,35 +994,10 @@ int closedir2 (DIR2 handle){
     return 0;
 }
 
+// TODOs:
+// Escrever e ler em mais de um cluster
 
 
+// Globais a partir do superbloco
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// eeee 1k linhas    
+// Remover constantes
