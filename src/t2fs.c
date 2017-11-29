@@ -581,7 +581,7 @@ int read2 (FILE2 handle, char *buffer2, int size){
         }
     }
     strcpy(buffer2,dt);
-    open[i].currentPointer = strlen(dt) + 1;
+    open[i].currentPointer = strlen(dt);
     return strlen(buffer2);
 }
 
@@ -606,47 +606,76 @@ int write2 (FILE2 handle, char *buffer, int size){
         if(i==9)
             return -1;
     }
-
-    int totalBytes = (curr.currentPointer -1 + size)/byteSec;
-    int freeSec = (curr.currentPointer -1)/256; 
-    
-    int j,written = 0;
-
-    if(freeSec == superbloco.SectorsPerCluster && curr.currentPointer -1 + size > 256)
-        return -1;
-
     curr.file.bytesFileSize = 0;
-    for (j = freeSec; j <= totalBytes; ++j)
-    {
-        read_sector(handle*superbloco.SectorsPerCluster + superbloco.DataSectorStart + j, &data);
-        len = strlen(data);
-        char dt[len+size];
-        char help[len+size];
-        strcpy(dt,data);
 
-        int haveB = curr.currentPointer -1 % byteSec;
-        int freeB = byteSec - haveB;
+    int qualCluster = curr.currentPointer/1024; // resposta 1 = segundo cluster ...
+    int posicaoEscreve = curr.currentPointer%1024; // sempre retorna numero entra 0-1023
+    int k;
+    int clu = curr.file.firstCluster;
+    int sizeAux = size;
+    for (k = 0; k < qualCluster; ++k){
+        clu = getNextCluster(clu);
+    }
+    while(clu != 0xFF){
+        int totalBytes = (posicaoEscreve + sizeAux)/byteSec; // > quantos setores usar (ateh 4)
+        int freeSec = posicaoEscreve/256; // primeiro setor livre
+        int j,written = 0;
 
-        if(bLen < freeB){
-            if(size < bLen){
-                freeB = size;
+        for (j = freeSec; j <= totalBytes; ++j){
+            read_sector(clu*superbloco.SectorsPerCluster + superbloco.DataSectorStart + j, &data);
+            len = strlen(data);
+            char dt[len+sizeAux];
+            char help[len+sizeAux];
+            strcpy(dt,data);
+
+            int haveB = posicaoEscreve % byteSec;
+            int freeB = byteSec - haveB;
+
+            if(bLen < freeB){
+                if(sizeAux < bLen){
+                    freeB = sizeAux;
+                }
+                else {
+                    freeB = bLen;
+                }
             }
-            else {
-                freeB = bLen;
-            }
+
+            strncpy(help,&toWrite[written], freeB);
+
+            strncpy(&dt[posicaoEscreve], help, freeB);
+
+            curr.currentPointer = curr.currentPointer + freeB + 1;
+            posicaoEscreve += freeB;
+            written = freeB-1;
+            write_sector(clu*superbloco.SectorsPerCluster + superbloco.DataSectorStart + j, dt);
+            curr.file.bytesFileSize += strlen(dt);
         }
-
-        strncpy(help,&toWrite[written], freeB);
-
-        strncpy(&dt[curr.currentPointer -1], help, freeB);
-
-        curr.currentPointer = curr.currentPointer + freeB + 1;
-        written = freeB-1;
-        write_sector(handle*superbloco.SectorsPerCluster + superbloco.DataSectorStart + j, dt);
-        curr.file.bytesFileSize += strlen(dt);
+        int pre = clu;
+        clu = getNextCluster(clu);
+        posicaoEscreve = 0;
+        sizeAux -= written;
+        if(clu == 0xFF && sizeAux > 1){// quando precisar alocar outro cluster            
+            unsigned int setorFAT[1] = {0}; 
+            readFreeFAT(setorFAT,1);
+            updtFat(pre, setorFAT[0]);
+            clu = setorFAT[0];
+        }
     }
     open[i] = curr;
     return size;
+}
+
+int updtFat(int prev, int next){
+    int sec = prev/64; // saber setor
+    int pos = prev%64; // saber posicao
+    read_sector(superbloco.pFATSectorStart + sec,buffer);
+    buffer[pos] = next;
+    write_sector(superbloco.pFATSectorStart + sec,buffer);
+    sec = next/64;
+    pos = next%64;
+    read_sector(superbloco.pFATSectorStart + sec,buffer);
+    buffer[pos] = 0xFF;
+    write_sector(superbloco.pFATSectorStart + sec,buffer);
 }
 
 int truncate2 (FILE2 handle){
@@ -997,6 +1026,7 @@ int closedir2 (DIR2 handle){
 // TODOs:
 // Escrever e ler em mais de um cluster
 
+// Read precisa lre a partir do CP
 
 // Globais a partir do superbloco
 
