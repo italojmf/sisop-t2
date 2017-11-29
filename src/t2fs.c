@@ -566,6 +566,7 @@ int read2 (FILE2 handle, char *buffer2, int size){
             return -1;
         }
     }
+
     if(secs > superbloco.SectorsPerCluster)
         secs = superbloco.SectorsPerCluster-1;
     for (j = 0; j <= secs; ++j)
@@ -573,15 +574,15 @@ int read2 (FILE2 handle, char *buffer2, int size){
         read_sector(handle*superbloco.SectorsPerCluster + superbloco.DataSectorStart + j, &data);
         len = strlen(data);
         if(len < size){
-            strcat(dt,data);
+            strcat(dt,&data[curr.currentPointer]);
             size = size - len;
         }
         else {
-            strncat(dt,data,size); 
+            strncat(dt,&data[curr.currentPointer],size); 
         }
     }
     strcpy(buffer2,dt);
-    open[i].currentPointer = strlen(dt);
+    open[i].currentPointer += strlen(dt);
     return strlen(buffer2);
 }
 
@@ -1024,9 +1025,7 @@ int closedir2 (DIR2 handle){
 }
 
 // TODOs:
-// Escrever e ler em mais de um cluster
-
-// Read precisa lre a partir do CP
+// Ler em mais de um cluster
 
 // Globais a partir do superbloco
 
