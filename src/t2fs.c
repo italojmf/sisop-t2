@@ -6,23 +6,25 @@
 
 int start = 0;
 struct t2fs_superbloco superbloco;
-
-int sb_spc, sb_dstart, sb_fstart, sb_root;
-
 unsigned char buffer[256];
 // this will store the cluster of the currentDir/save the list also
 unsigned int currentDir; // numero do cluster, simplificado, por ex: 2,3,4,5..
 unsigned int fatherDir;
+unsigned int sb_spc;
+unsigned int sb_root;
+unsigned int sb_dstart;
+unsigned int sb_fstart;
 
-#define	MAX_FILE_NAME_SIZE	55
+#define MAX_FILE_NAME_SIZE  55
 struct filePointer {
-    char    name[MAX_FILE_NAME_SIZE]; 	/* Nome do arquivo. : string com caracteres ASCII (0x21 até 0x7A), case sensitive.             */
+    char    name[MAX_FILE_NAME_SIZE];   /* Nome do arquivo. : string com caracteres ASCII (0x21 até 0x7A), case sensitive.             */
     int currentPointer;
 };
 
 typedef struct {
     struct t2fs_record file;
     int currentPointer;
+    int father;
 } OpenedFiles;
 
 
@@ -39,16 +41,16 @@ int openeddir = 0;
 
 /*-----------------------------------------------------------------------------
 Função: Usada para identificar os desenvolvedores do T2FS.
-	Essa função copia um string de identificação para o ponteiro indicado por "name".
-	Essa cópia não pode exceder o tamanho do buffer, informado pelo parâmetro "size".
-	O string deve ser formado apenas por caracteres ASCII (Valores entre 0x20 e 0x7A) e terminado por ‘\0’.
-	O string deve conter o nome e número do cartão dos participantes do grupo.
+    Essa função copia um string de identificação para o ponteiro indicado por "name".
+    Essa cópia não pode exceder o tamanho do buffer, informado pelo parâmetro "size".
+    O string deve ser formado apenas por caracteres ASCII (Valores entre 0x20 e 0x7A) e terminado por ‘\0’.
+    O string deve conter o nome e número do cartão dos participantes do grupo.
 
-Entra:	name -> buffer onde colocar o string de identificação.
-	size -> tamanho do buffer "name" (número máximo de bytes a serem copiados).
+Entra:  name -> buffer onde colocar o string de identificação.
+    size -> tamanho do buffer "name" (número máximo de bytes a serem copiados).
 
-Saída:	Se a operação foi realizada com sucesso, a função retorna "0" (zero).
-	Em caso de erro, será retornado um valor diferente de zero.
+Saída:  Se a operação foi realizada com sucesso, a função retorna "0" (zero).
+    Em caso de erro, será retornado um valor diferente de zero.
 -----------------------------------------------------------------------------*/
 int identify2 (char *name, int size){
     char nomes[] = "Gustavo P. Rosa - 206615\nItalo J. M. Franco - 242282\nVitoria M. Rosa - 242252\0";
@@ -61,34 +63,33 @@ int identify2 (char *name, int size){
 void init() {
     if(start==0){
         read_sector(0,&superbloco);
+        sb_spc = superbloco.SectorsPerCluster; 
+        sb_root = superbloco.RootDirCluster;
+        sb_dstart = superbloco.DataSectorStart;
+        sb_fstart = superbloco.pFATSectorStart;
         // Criacao diretorio raiz
-        currentDir = superbloco.RootDirCluster;
-        fatherDir = superbloco.RootDirCluster;
+        currentDir = sb_root;
+        fatherDir = sb_root;
         // Verificar se ja tem informacoes escritas no root e escrever info do rootDir
         struct t2fs_record rootData[4];
-        read_sector(superbloco.RootDirCluster*superbloco.SectorsPerCluster + superbloco.DataSectorStart,rootData);
+        read_sector(sb_root*sb_spc + sb_dstart,rootData);
         int ln = strcmp(rootData[0].name," ");
         if(ln == 0){
-            int len = superbloco.SectorsPerCluster*4;
+            int len = sb_spc*4;
             struct t2fs_record list[len];
             struct t2fs_record rootDir;
-            rootDir.bytesFileSize=superbloco.SectorsPerCluster*256;
-            rootDir.firstCluster=superbloco.RootDirCluster;
+            rootDir.bytesFileSize=sb_spc*256;
+            rootDir.firstCluster=sb_root;
             strcpy(rootDir.name,".");
             rootDir.TypeVal=0x02;
             struct t2fs_record rootFather;
-            rootFather.bytesFileSize=superbloco.SectorsPerCluster*256;
-            rootFather.firstCluster=superbloco.RootDirCluster;
+            rootFather.bytesFileSize=sb_spc*256;
+            rootFather.firstCluster=sb_root;
             strcpy(rootFather.name,"..");
             rootFather.TypeVal=0x02;
             list[0] = rootDir;
             list[1] = rootFather;
-            write_sector(superbloco.RootDirCluster*superbloco.SectorsPerCluster + superbloco.DataSectorStart,list);
-
-            sb_spc = superbloco.SectorsPerCluster;
-            sb_dstart = superbloco.DataSectorStart;
-            sb_fstart = superbloco.pFATSectorStart;
-            sb_root = superbloco.RootDirCluster;
+            write_sector(sb_root*sb_spc + sb_dstart,list);
         }
         start=1;
     }
@@ -183,7 +184,7 @@ int checkPath(char path[]){
         for(i=0;i<sb_spc;i++){ //
             read_sector(offset + sb_dstart + i,ret); // Deve haver uma lista em "buffer" contendo as entradas de diretorio
             // busca pro subdiretorios
-            for(k=0;k<4;k++){ // ALTERAR O 4 POR SECTOR/CLUSTER / SIZE DE UM RECORD
+            for(k=0;k<4;k++){ 
                 if(dpath != NULL && strcmp(dpath, ret[k].name) == 0 && ret[k].TypeVal == 0x02){
                     offset = ret[k].firstCluster*sb_spc;
                 }
@@ -272,12 +273,10 @@ int sectorToWrite(char path[]){
     while(dpath != NULL && strcmp(dpath," ") !=0 && troca){
         newoffset=offset;
         for(i=0;i<sb_spc;i++){ //
-            read_sector(offset + sb_dstart + i,ret); // Deve haver uma lista em "buffer" contendo as entradas de diretorio
+            read_sector(offset + sb_dstart + i,ret); 
             // busca pro subdiretorios
-            for(k=0;k<4;k++){ // ALTERAR O 4 POR SECTOR/CLUSTER / SIZE DE UM RECORD
+            for(k=0;k<4;k++){ 
                 if(dpath != NULL && strcmp(dpath, ret[k].name) == 0 && ret[k].TypeVal == 0x02){
-                    //puts(ret[k].name);
-                    //printf("%d, %x\n",ret[k].firstCluster,ret[k].firstCluster);
                     offset = ret[k].firstCluster*sb_spc;
                 }
             }
@@ -308,12 +307,12 @@ int uniqueName(int sector, unsigned int type, char name[]){
     struct t2fs_record list[4];
 
     for (i = 0; i < sb_spc; ++i)
-    {
+    {   
         read_sector(sector + i, list);
         for (j = 0; j < 4; ++j)
         {
             if(strcmp(list[j].name,name) == 0 && list[j].TypeVal == type){
-                return -1;
+                return -1;          
             }
         }
     }
@@ -321,8 +320,8 @@ int uniqueName(int sector, unsigned int type, char name[]){
 }
 
 void writeFATMapping(int setorFAT[], int map[]){
-    int endFAT = superbloco.DataSectorStart;
-    int currentFAT = superbloco.pFATSectorStart;
+    int endFAT = sb_dstart;
+    int currentFAT = sb_fstart;
     currentFAT += 2;
     int i,j=1;
     read_sector(setorFAT[0],buffer);
@@ -336,22 +335,25 @@ void writeFATMapping(int setorFAT[], int map[]){
     }
 }
 
-void clearFat(int sector, int pos){
+int clearFat(int sector, int pos){
     read_sector(sector,&buffer);
+    if(buffer[pos] == 0xFE)
+        return -1;
     buffer[pos] = 0x00;
     write_sector(sector,buffer);
+    return 1;
 }
 
 int getNextCluster(int fatPos){
     int fatSet = fatPos/64;
     int fatIn = fatPos%64;
-    read_sector(superbloco.pFATSectorStart + fatSet,buffer);
+    read_sector(sb_fstart + fatSet,buffer);
     return buffer[fatIn];
 }
 
-void findFileTrace(int cluster){
+int findFileTrace(int cluster){
     int i; // > recuperar posicao
-    int j; // recuperar setor
+    int j; // recuperar setor 
     int curr = cluster;
     do {
         if(curr > 64){
@@ -364,7 +366,8 @@ void findFileTrace(int cluster){
         }
         read_sector(j+sb_fstart,&buffer);
         curr = buffer[i];
-        clearFat(j+1,i);
+        if(clearFat(j+1,i) < 1)
+            return 0;
     } while(curr != 0xFF);
 }
 
@@ -385,7 +388,7 @@ int isDirEmpty(int sector){
     {
         read_sector(sector*sb_spc + sb_dstart + i,del);
         for (j = 0; j < 4; ++j)
-        {
+        {   
             char dirName[55];
             strcpy(dirName,del[j].name);
             if(strcmp(dirName,".") != 0 && strcmp(dirName,"..") != 0 && strcmp(dirName,"") != 0){
@@ -402,7 +405,7 @@ int removeFromFather(int cluster, char nome[]){
     int i,j,flag=0;
 
     for (i = 0; i < sb_spc; ++i)
-    {
+    {   
         read_sector(cluster*sb_spc + sb_dstart + i, del);
         for (j = 0; j < 4; ++j)
         {
@@ -422,20 +425,39 @@ int getFather(int cluster){
     struct t2fs_record list[4];
 
     read_sector(cluster*sb_spc + sb_dstart,list);
-    return list[1].firstCluster;
+    printf("%d %d\n",list[0].firstCluster, list[1].firstCluster);
+    return list[1].firstCluster;    
 }
 
 int updtFat(int prev, int next){
     int sec = prev/64; // saber setor
     int pos = prev%64; // saber posicao
-    read_sector(superbloco.pFATSectorStart + sec,buffer);
+    read_sector(sb_fstart + sec,buffer);
     buffer[pos] = next;
-    write_sector(superbloco.pFATSectorStart + sec,buffer);
+    write_sector(sb_fstart + sec,buffer);
     sec = next/64;
     pos = next%64;
-    read_sector(superbloco.pFATSectorStart + sec,buffer);
+    read_sector(sb_fstart + sec,buffer);
     buffer[pos] = 0xFF;
-    write_sector(superbloco.pFATSectorStart + sec,buffer);
+    write_sector(sb_fstart + sec,buffer);
+}
+
+int updateFileSize(int size, int cluster, char name[]){
+    int i,j;
+    struct t2fs_record list[4];
+    cluster = (cluster - sb_dstart)/sb_spc;
+    for (i = 0; i < sb_spc; ++i)
+    {   
+        read_sector(cluster * sb_spc + sb_dstart + i, list);
+        for (j = 0; j < 4; ++j)
+        {   
+            if(strcmp(list[j].name,name) == 0){
+                list[j].bytesFileSize = size;
+                write_sector(cluster * sb_spc + sb_dstart + i, list);
+                return 0;
+            }
+        }
+    }
 }
 
 FILE2 create2 (char *filename){
@@ -486,7 +508,7 @@ int delete2 (char *filename){
     findPath(filename, nome, path);
 
     if(checkPath(path) >= 0){
-        int sec = sectorToWrite(filename);
+        int sec = sectorToWrite(path);
         struct t2fs_record list[4];
         int i,j,s = -1;
         int cluster;
@@ -496,7 +518,7 @@ int delete2 (char *filename){
 
         strcpy(auxName,filename);
 
-        for(i=0;i<4;i++){
+        for(i=0;i<sb_spc;i++){
             read_sector(sec + i,list);
             for(j=0;j<4;j++){
                 if(strcmp(list[j].name, nome) == 0 && list[j].TypeVal == 0x01){
@@ -526,7 +548,7 @@ FILE2 open2 (char *filename){
     findPath(filename, nome, path);
 
     if(checkPath(path) >= 0){
-        int sec = sectorToWrite(filename);
+        int sec = sectorToWrite(path);
         OpenedFiles new;
         struct t2fs_record list[4];
         int i,j, s=-1;
@@ -537,7 +559,8 @@ FILE2 open2 (char *filename){
                 if(strcmp(list[j].name, nome) == 0 && list[j].TypeVal == 0x01){
                     new.file = list[j];
                     new.currentPointer = 0;
-                    s=i;
+                    new.father = sec;
+                    s=i;                
                     break;
                 }
             }
@@ -588,26 +611,27 @@ int read2 (FILE2 handle, char *buffer2, int size){
     }
     // TO BE TESTED
     int clu = handle;
-    int qualCluster = curr.currentPointer/(256*sb_spc); // resposta 1 = segundo cluster ...
+    int qualCluster = (curr.currentPointer/(256*sb_spc)); // resposta 1 = segundo cluster ..., sempre entre 0 e 3
     int posicaoLe = curr.currentPointer%(256*sb_spc); // sempre retorna numero entra 0-1023
     int auxSize = size;
+    int k;
 
     for (k = 0; k < qualCluster; ++k){
         clu = getNextCluster(clu);
     }
 
-    while(clu != OxFF && auxSize > 0) {
-        int inicio = posicaoLe/256 // primeiro setor para pegar posicao
+    while(clu != 0xFF && auxSize > 0) {
+        int inicio = posicaoLe/256; // primeiro setor para pegar posicao
         int posicao = posicaoLe%256; // de onde ler
         for (j = inicio; j < sb_spc; ++j){
             read_sector(clu*sb_spc + sb_dstart + j, &data);
             len = strlen(&data[posicao]);
-            if(len < auxSize){
+            if(len < auxSize && len > 0){
                 strcat(dt,&data[posicao]);
                 auxSize = auxSize - len;
             }
             else {
-                if(auxSize > 0){
+                if(auxSize >= 0){
                     strncat(dt,&data[posicao],auxSize);
                     strcpy(buffer2,dt);
                     open[i].currentPointer += strlen(dt);
@@ -644,8 +668,8 @@ int write2 (FILE2 handle, char *buffer, int size){
     }
     curr.file.bytesFileSize = 0;
 
-    int qualCluster = curr.currentPointer/(256*sb_spc); // resposta 1 = segundo cluster ...
-    int posicaoEscreve = curr.currentPointer%(256*sb_spc); // sempre retorna numero entra 0-1023
+    int qualCluster = curr.currentPointer/1024; // resposta 1 = segundo cluster ...
+    int posicaoEscreve = curr.currentPointer%1024; // sempre retorna numero entra 0-1023
     int k;
     int clu = curr.file.firstCluster;
     int sizeAux = size;
@@ -662,6 +686,8 @@ int write2 (FILE2 handle, char *buffer, int size){
             len = strlen(data);
             char dt[len+sizeAux];
             char help[len+sizeAux];
+            strcpy(help,"");
+            strcpy(dt,"");
             strcpy(dt,data);
 
             int haveB = posicaoEscreve % byteSec;
@@ -684,14 +710,16 @@ int write2 (FILE2 handle, char *buffer, int size){
             posicaoEscreve += freeB;
             written = freeB-1;
             write_sector(clu*sb_spc + sb_dstart + j, dt);
-            curr.file.bytesFileSize += strlen(dt);
+            curr.file.bytesFileSize += strlen(dt) > size ? size:strlen(dt);
+
+            updateFileSize(curr.file.bytesFileSize,curr.father,curr.file.name);
         }
         int pre = clu;
         clu = getNextCluster(clu);
         posicaoEscreve = 0;
         sizeAux -= written;
-        if(clu == 0xFF && sizeAux > 1){// quando precisar alocar outro cluster
-            unsigned int setorFAT[1] = {0};
+        if(clu == 0xFF && sizeAux > 1){// quando precisar alocar outro cluster            
+            unsigned int setorFAT[1] = {0}; 
             readFreeFAT(setorFAT,1);
             updtFat(pre, setorFAT[0]);
             clu = setorFAT[0];
@@ -706,6 +734,8 @@ int truncate2 (FILE2 handle){
     int i;
     char data[256];
     OpenedFiles curr;
+    int spc = sb_spc;
+    int start = sb_dstart;
     int byteSec = 256;
     for (i = 0; i < 10; ++i)
     {
@@ -719,13 +749,13 @@ int truncate2 (FILE2 handle){
 
     int sec = (curr.currentPointer)/byteSec;
 
-    read_sector(curr.file.firstCluster * sb_spc + sb_start + sec, &data);
+    read_sector(curr.file.firstCluster * spc + start + sec, &data);
     int len = strlen(data);
     char dt[len];
     strcpy(dt,data);
 
     dt[curr.currentPointer - 1] = '\0';
-    write_sector(curr.file.firstCluster * sb_spc + sb_start + sec, dt);
+    write_sector(curr.file.firstCluster * spc + start + sec, dt);
 
     return 0;
 }
@@ -735,6 +765,8 @@ int seek2 (FILE2 handle, unsigned int offset){
     int i;
     char data[256];
     OpenedFiles curr;
+    int spc = sb_spc;
+    int start = sb_dstart;
     int byteSec = 256;
     for (i = 0; i < 10; ++i)
     {
@@ -745,7 +777,7 @@ int seek2 (FILE2 handle, unsigned int offset){
         if(i==9)
             return -1;
     }
-
+    
     if(offset == -1){
         curr.currentPointer = curr.file.bytesFileSize;
         open[i] = curr;
@@ -773,22 +805,24 @@ int mkdir2 (char *pathname){
     findPath(pathname, nome, path);
 
     if(checkPath(path) >= 0){
+        int spc = sb_spc;
+        int start = sb_dstart;
         struct t2fs_record list[4];
         struct t2fs_record newDir;
         newDir.bytesFileSize=0;
-        newDir.firstCluster= (map[0] - sb_start)/sb_spc;
+        newDir.firstCluster= (map[0] - start)/spc;
         strcpy(newDir.name,nome);
         newDir.TypeVal=0x02;
 
         struct t2fs_record current;
         current.bytesFileSize=0;
-        current.firstCluster = (map[0] - sb_start)/sb_spc;
+        current.firstCluster = (map[0] - start)/spc;
         strcpy(current.name,".");
         current.TypeVal=0x02;
 
         struct t2fs_record father;
         father.bytesFileSize=0;
-        father.firstCluster = (sectorToWrite(path) - sb_start)/sb_spc;
+        father.firstCluster = (sectorToWrite(path) - start)/spc;
         strcpy(father.name,"..");
         father.TypeVal=0x02;
 
@@ -800,7 +834,7 @@ int mkdir2 (char *pathname){
         list[3] = holder;
         int sec = sectorToWrite(path);
         if(uniqueName(sec,0x02,newDir.name) > 0 && writeToList(newDir, sec) != -1){
-            write_sector(newDir.firstCluster*sb_spc + sb_start,list);
+            write_sector(newDir.firstCluster*spc + start,list);
             writeFATMapping(setorFAT,map); // Basicamente ler o valor do map e escrever o proximo valor nele na area da FAT => FAT[MAPPING[N]] = MAPPING[N+1]
             return 0;
         }
@@ -817,9 +851,9 @@ int rmdir2 (char *pathname){
     findPath(pathname, nome, path);
 
     if(checkPath(path) >= 0){
-        int sec = sectorToWrite(pathname);
+        int sec = sectorToWrite(path);
 
-        int i,j,flag = 0;
+        int i,j,flag = -1;
         struct t2fs_record del[4];
         struct t2fs_record toDel;
         static const struct t2fs_record holder;
@@ -828,25 +862,28 @@ int rmdir2 (char *pathname){
         {
             read_sector(sec+i,del);
             for (j = 0; j < 4; ++j)
-            {
-                if(strcmp(del[j].name, nome) == 0){
+            {   
+                if(strcmp(del[j].name, nome) == 0 && del[j].TypeVal == 0x02){
                     toDel = del[j];
-                    flag = 1;
+                    flag = i;
                     break;
                 }
             }
-            if(flag)
+            if(flag == i)
                 break;
         }
 
-        if(flag && isDirEmpty(toDel.firstCluster) < 0)
+        if(flag!=i)
+            return -1;
+
+        if(isDirEmpty(toDel.firstCluster) < 0)
             return -1;
         else {
             int fatSec = toDel.firstCluster/64 + sb_fstart;
             int fatherCluster = getFather(toDel.firstCluster);
 
             clearFat(fatSec, toDel.firstCluster);
-
+            
             removeFromFather(fatherCluster, nome);
 
             for (i = 0; i < 4; ++i)
@@ -864,7 +901,7 @@ int chdir2 (char *pathname){
     init();
     int len = strlen(pathname);
     char path[len];
-
+    
     char nome[MAX_FILE_NAME_SIZE];
     readFileName(pathname,nome);
     findPath(pathname, nome, path);
@@ -885,7 +922,7 @@ int chdir2 (char *pathname){
         {
             read_sector(sec+i,list);
             for (j = 0; j < 4; ++j)
-            {
+            {       
                 if(strcmp(list[j].name, nome) == 0 && list[j].TypeVal == 0x02){
                     dir = list[j];
                     s=i;
@@ -918,10 +955,10 @@ int getcwd2 (char *pathname, int size){
     }
     int i,j,s=-1;
     for (i = 0; i < sb_spc; ++i)
-    {
+    {   
         read_sector(fatherDir*sb_spc + sb_dstart + i, list);
         for (j = 0; j < 4; ++j)
-        {
+        {   
             if(list[j].firstCluster == currentDir && list[j].TypeVal == 0x02){
                 curr=list[j];
                 s=i;
@@ -943,7 +980,7 @@ DIR2 opendir2 (char *pathname){
     init();
     int len = strlen(pathname);
     char path[len];
-
+    
     char nome[MAX_FILE_NAME_SIZE];
     readFileName(pathname,nome);
     findPath(pathname, nome, path);
@@ -1002,15 +1039,16 @@ int readdir2 (DIR2 handle, DIRENT2 *dentry){
     struct t2fs_record list[4];
     struct t2fs_record dir;
 
-    int sec = point/4;
+    int sec = point/sb_spc;
     read_sector(handle*sb_spc + sb_dstart + sec, list);
-    dir = list[point%4];
-
+    dir = list[point%sb_spc];
+    
     if(dir.firstCluster == 0){
         return -1;
     }
 
     strcpy(dentry->name, dir.name);
+    printf("%d size", dir.bytesFileSize);
     dentry->fileSize = dir.bytesFileSize;
     dentry->fileType = dir.TypeVal;
 
@@ -1023,7 +1061,7 @@ int readdir2 (DIR2 handle, DIRENT2 *dentry){
 int closedir2 (DIR2 handle){
     init();
     int i;
-
+    
     static const OpenedDirs holder;
 
     for (i = 0; i < 10; ++i)
@@ -1033,7 +1071,7 @@ int closedir2 (DIR2 handle){
             break;
         }
     }
-
+    
     if(i > 9)
         return -1;
 
