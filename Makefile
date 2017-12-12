@@ -13,7 +13,6 @@ LIB_DIR=./lib
 INC_DIR=./include
 BIN_DIR=./bin
 SRC_DIR=./src
-EX_DIR=./exemplo
 
 all: compile libmount
 
