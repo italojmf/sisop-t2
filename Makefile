@@ -20,6 +20,7 @@ all: compile libmount
 compile: $(SRC_DIR)/t2fs.c
 	$(CC) -c $(SRC_DIR)/t2fs.c
 	mv t2fs.o $(BIN_DIR)
+	cp $(LIB_DIR)/apidisk.o $(BIN_DIR)
 
 libmount: $(BIN_DIR)/t2fs.o $(BIN_DIR)/apidisk.o
 	ar crs libt2fs.a  $(BIN_DIR)/apidisk.o  $(BIN_DIR)/t2fs.o
