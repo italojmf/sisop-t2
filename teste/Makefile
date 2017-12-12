@@ -11,24 +11,13 @@
 CC=gcc
 LIB_DIR=../lib
 INC_DIR=../include
-BIN_DIR=../bin
-SRC_DIR=../src
 
-all: compile libmount exemplo
+all: exemplo
 
-compile: $(SRC_DIR)/t2fs.c
-	$(CC) -c $(SRC_DIR)/t2fs.c
-	mv t2fs.o $(BIN_DIR)
-	cp $(LIB_DIR)/apidisk.o $(BIN_DIR)
-
-libmount: $(BIN_DIR)/t2fs.o $(BIN_DIR)/apidisk.o
-	ar crs libt2fs.a  $(BIN_DIR)/apidisk.o  $(BIN_DIR)/t2fs.o
-	mv libt2fs.a $(LIB_DIR)
-
-exemplo: t2fstst.c $(LIB_DIR)/libt2fs.a
-	$(CC) -o main t2fstst.c -L$(LIB_DIR) -lt2fs -Wall
+exemplo: t2fstst.c
+	$(CC) -o main t2fstst.c -L$(LIB_DIR) -I$(INC_DIR) -lt2fs -Wall
 
 clean:
-	rm -rf $(LIB_DIR)/*.a $(BIN_DIR)/*.o $(SRC_DIR)/*~ $(INC_DIR)/*~ *~
+	rm -rf *~ *.o main
 
 
